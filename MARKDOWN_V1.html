@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conversor a Markdown</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- Librerías de conversión (se cargan desde internet la primera vez) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/turndown/7.1.2/turndown.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<style>
+  :root{
+    --bg:#e8eef0; --panel:#ffffff; --ink:#16181c; --muted:#8b9099;
+    --line:#edeef0; --soft:#f5f6f8; --dark:#22271f; --green:#16a34a;
+    --tint1:#eef4f0; --tint2:#e6edf2; --tint3:#f2f7f3;
+    --radius:20px; --shadow:0 1px 3px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.05);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:'Inter',-apple-system,'Segoe UI',sans-serif;
+    background:linear-gradient(150deg,var(--tint1) 0%,var(--tint2) 55%,var(--tint3) 100%);
+    background-attachment:fixed;
+    color:var(--ink); font-size:15px;
+  }
+  .app{display:flex; min-height:100vh}
+
+  /* ---------- Barra lateral ---------- */
+  .sidebar{
+    width:248px; background:var(--panel); padding:26px 18px;
+    display:flex; flex-direction:column; gap:8px; border-right:1px solid var(--line);
+  }
+  .logo{font-weight:800; font-size:22px; letter-spacing:-.5px; padding:0 8px 22px}
+  .logo span{color:var(--green)}
+  .nav a{
+    display:flex; align-items:center; gap:12px; padding:11px 12px; border-radius:12px;
+    color:#5b6068; text-decoration:none; font-weight:500; cursor:pointer;
+  }
+  .nav a.activo{background:var(--soft); color:var(--ink); font-weight:600}
+  .nav a:hover{background:var(--soft)}
+  .nav svg{width:19px; height:19px; stroke-width:1.7}
+  .tip{
+    margin-top:auto; background:var(--dark); color:#fff; border-radius:16px; padding:18px;
+  }
+  .tip h4{margin:0 0 6px; font-size:14px}
+  .tip p{margin:0; font-size:12px; color:#c7ccc3; line-height:1.5}
+  .verfooter{margin-top:14px; text-align:center; font-size:11.5px; color:var(--muted); font-weight:600; letter-spacing:.2px}
+  .verfooter b{color:var(--green)}
+
+  /* ---------- Área principal ---------- */
+  .main{flex:1; padding:26px 32px; min-width:0}
+  .topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:24px}
+  .topbar h1{margin:0; font-size:29px; font-weight:700; letter-spacing:-.5px}
+  .estado-app{
+    display:flex; align-items:center; gap:8px; background:var(--panel);
+    padding:9px 16px; border-radius:999px; box-shadow:var(--shadow); font-size:14px; font-weight:500;
+  }
+  .dot{width:9px; height:9px; border-radius:50%; background:var(--green)}
+
+  /* ---------- Tarjetas de estadísticas ---------- */
+  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:18px}
+  .stat{background:var(--panel); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow); text-align:center}
+  .stat.dark{background:var(--dark); color:#fff}
+  .stat .lbl{font-size:13.5px; color:var(--muted); font-weight:500}
+  .stat.dark .lbl{color:#aeb4ab}
+  .stat .num{font-size:38px; font-weight:700; margin-top:8px; letter-spacing:-1px}
+
+  /* ---------- Tarjetas generales ---------- */
+  .card{background:var(--panel); border-radius:var(--radius); box-shadow:var(--shadow); padding:22px; margin-bottom:18px}
+  .card-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; gap:12px; flex-wrap:wrap}
+  .card-head h3{margin:0; font-size:17px; font-weight:600}
+  .pills{display:flex; gap:6px; background:var(--soft); padding:4px; border-radius:999px}
+  .pills button{
+    border:0; background:transparent; padding:7px 16px; border-radius:999px;
+    font:inherit; font-size:13px; font-weight:500; color:#6b7079; cursor:pointer;
+  }
+  .pills button.on{background:var(--dark); color:#fff}
+  .lang{display:flex; align-items:center; gap:8px; font-size:13px; color:#5b6068; font-weight:600}
+  .lang select{
+    font:inherit; font-size:13px; padding:7px 10px; border:1px solid var(--line);
+    border-radius:10px; background:var(--soft); color:var(--ink); cursor:pointer;
+  }
+
+  /* ---------- Zona de carga ---------- */
+  #zona{
+    border:2px dashed #d3d6da; border-radius:16px; background:var(--soft);
+    padding:46px 20px; text-align:center; cursor:pointer; transition:.18s;
+  }
+  #zona.activo{border-color:var(--green); background:#f0faf2}
+  #zona .ic{font-size:40px}
+  #zona p{margin:12px 0 4px; font-size:16px; font-weight:600}
+  #zona small{color:var(--muted)}
+
+  /* ---------- Tabla de archivos ---------- */
+  table{width:100%; border-collapse:collapse}
+  th{text-align:center; font-size:13px; color:var(--muted); font-weight:600; padding:12px 8px; border-bottom:1px solid var(--line)}
+  td{padding:16px 8px; border-bottom:1px solid var(--line); font-size:15px; vertical-align:middle; text-align:center}
+  tr:last-child td{border-bottom:0}
+  .badge{display:inline-block; padding:4px 11px; border-radius:999px; font-size:12px; font-weight:600; background:var(--soft); color:#555}
+  .badge.pdf{background:#fdecec; color:#c0392b}
+  .badge.word{background:#e9f0fb; color:#2563eb}
+  .badge.excel{background:#e8f6ec; color:#15803d}
+  .badge.img{background:#f3ecfb; color:#7c3aed}
+  .est{font-size:13px; color:var(--muted)}
+  .est.ok{color:var(--green); font-weight:600}
+  .est.err{color:#c0392b; font-weight:600}
+  .vacio{text-align:center; color:var(--muted); padding:24px}
+
+  /* ---------- Salida ---------- */
+  textarea{
+    width:100%; height:300px; border:1px solid var(--line); border-radius:14px;
+    padding:14px; font-family:'Consolas',monospace; font-size:13px; resize:vertical; background:var(--soft);
+  }
+  .acciones{display:flex; gap:10px; margin-top:14px; flex-wrap:wrap}
+  .btn{border:0; padding:11px 20px; border-radius:12px; font:inherit; font-weight:600; font-size:14px; cursor:pointer}
+  .btn.primary{background:var(--dark); color:#fff}
+  .btn.ghost{background:var(--soft); color:#444}
+  .btn:hover{opacity:.9}
+  .nota{font-size:12px; color:var(--muted); margin-top:10px; line-height:1.6}
+
+  /* ---------- Panel de diagnóstico ---------- */
+  .diag{margin-top:16px; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:var(--soft)}
+  .diag-head{
+    display:flex; justify-content:space-between; align-items:center; padding:13px 16px;
+    cursor:pointer; font-weight:600; font-size:14px; background:var(--panel);
+  }
+  .diag-head .diag-toggle{transition:.2s}
+  .diag-body{padding:14px 16px}
+  .diag-body.oculto{display:none}
+  .diag-conf{display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:13.5px; font-weight:700}
+  .barra{flex:1; min-width:150px; height:12px; background:#e1e4e7; border-radius:999px; overflow:hidden}
+  .barra-fill{height:100%; width:0; border-radius:999px; transition:width .45s ease; background:var(--green)}
+  .diag-counts{display:flex; gap:18px; flex-wrap:wrap; margin:13px 0; font-size:13px; color:#5b6068}
+  .diag-counts b{color:var(--ink)}
+  .diag-list{list-style:none; margin:0 0 4px; padding:0; max-height:210px; overflow:auto; font-size:13px}
+  .diag-list li{padding:7px 10px; border-radius:8px; margin-bottom:5px; background:var(--panel); text-align:left}
+  .diag-list li.crit{border-left:3px solid #c0392b}
+  .diag-list li.warn{border-left:3px solid #d99a00}
+
+  /* ---------- Modal (pruebas / detalle) ---------- */
+  .modal{
+    position:fixed; inset:0; z-index:60; display:none; align-items:center; justify-content:center;
+    background:rgba(20,24,28,.5); backdrop-filter:blur(3px); padding:20px;
+  }
+  .modal.show{display:flex}
+  .modal-card{
+    background:var(--panel); border-radius:18px; max-width:780px; width:100%; max-height:84vh;
+    overflow:auto; box-shadow:0 24px 70px rgba(0,0,0,.3);
+  }
+  .modal-head{
+    display:flex; justify-content:space-between; align-items:center; padding:18px 22px;
+    border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--panel); z-index:1;
+  }
+  .modal-head h3{margin:0; font-size:18px}
+  .modal-x{border:0; background:var(--soft); width:34px; height:34px; border-radius:10px; cursor:pointer; font-size:15px}
+  .modal-body{padding:18px 22px}
+  .tabla-test{width:100%; border-collapse:collapse; font-size:12.5px}
+  .tabla-test th,.tabla-test td{padding:8px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top}
+  .tabla-test code{background:var(--soft); padding:1px 5px; border-radius:5px; font-size:12px}
+  .tabla-test td.r{font-weight:700; white-space:nowrap}
+  .pass{color:var(--green)} .fail{color:#c0392b}
+  .test-resumen{font-size:15px; font-weight:700; margin:0 0 14px}
+  .btn-test{margin-top:6px}
+
+  /* ---------- Overlay de carga (documento en proceso) ---------- */
+  .overlay{
+    position:fixed; inset:0; z-index:50; display:none;
+    align-items:center; justify-content:center;
+    background:rgba(20,24,28,.42); backdrop-filter:blur(3px);
+  }
+  .overlay.show{display:flex; animation:aparecer .2s ease}
+  @keyframes aparecer{from{opacity:0}to{opacity:1}}
+  .loader{
+    background:var(--panel); border-radius:22px; padding:34px 46px; text-align:center;
+    box-shadow:0 24px 70px rgba(0,0,0,.28); min-width:290px; max-width:90vw;
+  }
+  .loader .doc{font-size:36px; line-height:1; animation:flota 1.5s ease-in-out infinite}
+  @keyframes flota{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+  .spinner{
+    width:54px; height:54px; margin:14px auto 18px; border-radius:50%;
+    border:5px solid #e6e8eb; border-top-color:var(--green);
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .loader h4{margin:0 0 6px; font-size:18px; font-weight:700}
+  .loader p{margin:0; color:var(--muted); font-size:13.5px; max-width:320px}
+  .loader .puntos::after{display:inline-block; width:1.1em; text-align:left; content:''; animation:puntos 1.2s steps(4,end) infinite}
+  @keyframes puntos{0%{content:''}25%{content:'.'}50%{content:'..'}75%,100%{content:'...'}}
+
+  @media(max-width:880px){
+    .sidebar{display:none}
+    .stats{grid-template-columns:repeat(2,1fr)}
+  }
+
+  /* ---------- Toast (aviso breve que aparece abajo y se desvanece solo) ---------- */
+  .toast{
+    position:fixed; left:50%; bottom:28px; transform:translateX(-50%) translateY(16px);
+    background:var(--dark); color:#fff; font-size:14px; font-weight:600;
+    padding:12px 20px; border-radius:999px; box-shadow:0 8px 28px rgba(0,0,0,.22);
+    z-index:90; opacity:0; pointer-events:none; transition:opacity .25s ease, transform .25s ease;
+    max-width:90vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  .toast.err{background:#c0392b}
+</style>
+</head>
+<body>
+
+<!-- TOAST (aviso breve) -->
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- OVERLAY DE CARGA -->
+<div class="overlay" id="overlay">
+  <div class="loader">
+    <div class="doc">📄</div>
+    <div class="spinner"></div>
+    <h4>Procesando documento</h4>
+    <p><span id="overlayTxt">Preparando…</span><span class="puntos"></span></p>
+  </div>
+</div>
+
+<!-- MODAL (pruebas / detalle de diagnóstico) -->
+<div class="modal" id="modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="modalTitulo">Detalle</h3>
+      <button class="modal-x" id="modalX">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="app">
+
+  <!-- BARRA LATERAL -->
+  <aside class="sidebar">
+    <div class="logo">Markdown</div>
+    <nav class="nav">
+      <a class="activo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg> Convertir</a>
+      <a onclick="document.getElementById('salida').scrollIntoView({behavior:'smooth'})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 6h16M4 12h16M4 18h10"/></svg> Resultado</a>
+      <a onclick="ayuda()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3 2.4c-.6.2-1 .8-1 1.6M12 17h.01"/></svg> Ayuda</a>
+    </nav>
+    <div class="tip">
+      <h4>💡 Consejo</h4>
+      <p>Los PDF escaneados e imágenes se leen con OCR y se corrigen las confusiones típicas (O↔0, I/L↔1, B/H↔8, Q→@, separadores de miles…). Revisa el panel de Diagnóstico antes de usar el texto.</p>
+    </div>
+    <div class="verfooter">Conversor Markdown <b>v1.1.2</b> · OCR + Layout</div>
+  </aside>
+
+  <!-- PRINCIPAL -->
+  <main class="main">
+    <div class="topbar">
+      <h1>Conversor a Markdown</h1>
+      <div class="estado-app"><span class="dot"></span><span id="estadoApp">Listo</span></div>
+    </div>
+
+    <!-- ESTADÍSTICAS -->
+    <div class="stats">
+      <div class="stat dark"><div class="lbl">Archivos convertidos</div><div class="num" id="stArchivos">0</div></div>
+      <div class="stat"><div class="lbl">Páginas procesadas</div><div class="num" id="stPaginas">0</div></div>
+      <div class="stat"><div class="lbl">Leídas con OCR</div><div class="num" id="stOcr">0</div></div>
+      <div class="stat"><div class="lbl">Texto generado</div><div class="num" id="stTam">0 KB</div></div>
+    </div>
+
+    <!-- ZONA DE CARGA -->
+    <div class="card">
+      <div class="card-head">
+        <h3>Cargar archivos</h3>
+        <label class="lang">Idioma OCR
+          <select id="idiomaOCR">
+            <option value="spa+eng" selected>Español + Inglés</option>
+            <option value="spa">Español</option>
+            <option value="eng">Inglés</option>
+            <option value="spa+eng+por+fra+ita+deu">Multi (es·en·pt·fr·it·de)</option>
+            <option value="por">Portugués</option>
+            <option value="fra">Francés</option>
+            <option value="deu">Alemán</option>
+            <option value="ita">Italiano</option>
+          </select>
+        </label>
+      </div>
+      <div id="zona">
+        <div class="ic">⬇️</div>
+        <p>Arrastra aquí tus archivos</p>
+        <small>o haz clic para seleccionarlos · PDF, Word, Excel, CSV, texto e imágenes</small>
+        <input type="file" id="input" multiple style="display:none"
+               accept=".pdf,.docx,.xlsx,.xls,.csv,.txt,.md,.png,.jpg,.jpeg">
+      </div>
+    </div>
+
+    <!-- LISTA DE ARCHIVOS -->
+    <div class="card">
+      <div class="card-head">
+        <h3>Archivos</h3>
+        <div class="pills" id="filtros">
+          <button class="on" data-f="all">Todos</button>
+          <button data-f="pdf">PDF</button>
+          <button data-f="office">Office</button>
+          <button data-f="img">Imágenes</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Archivo</th><th>Tipo</th><th>Estado</th></tr></thead>
+        <tbody id="tabla">
+          <tr class="filaVacia"><td colspan="3" class="vacio">Aún no has cargado archivos.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- SALIDA -->
+    <div class="card" id="salida" style="display:none">
+      <div class="card-head"><h3>✅ Resultado en Markdown</h3></div>
+      <textarea id="texto" readonly></textarea>
+      <div class="acciones">
+        <button class="btn primary" id="copiar">📋 Copiar todo</button>
+        <button class="btn ghost" id="descargar">💾 Descargar .md</button>
+        <button class="btn ghost" id="limpiar">🗑️ Limpiar</button>
+      </div>
+      <p class="nota">Copia el texto y pégalo en Claude, o descarga el archivo .md y déjalo en la carpeta de tu proyecto.</p>
+
+      <!-- PANEL DE DIAGNÓSTICO -->
+      <div class="diag" id="diag" style="display:none">
+        <div class="diag-head" id="diagHead">
+          <span>🔍 Diagnóstico OCR</span><span class="diag-toggle" id="diagToggle">▼</span>
+        </div>
+        <div class="diag-body" id="diagBody">
+          <div class="diag-conf">
+            <span>Confianza:</span>
+            <div class="barra"><div class="barra-fill" id="diagBar"></div></div>
+            <span id="diagPct">--%</span> <span id="diagSemaforo">🟢</span> <span id="diagRec"></span>
+          </div>
+          <div class="diag-counts">
+            <span>Correcciones aplicadas: <b id="diagCorr">0</b></span>
+            <span>Advertencias: <b id="diagAdv">0</b></span>
+            <span>Críticos: <b id="diagCrit">0</b></span>
+          </div>
+          <ul class="diag-list" id="diagList"></ul>
+          <div class="acciones">
+            <button class="btn ghost" id="diagDetalle">Ver detalle</button>
+            <button class="btn ghost" id="diagExport">Exportar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+  const input=document.getElementById("input");
+  const zona=document.getElementById("zona");
+  const tabla=document.getElementById("tabla");
+  const salida=document.getElementById("salida");
+  const texto=document.getElementById("texto");
+  const estadoApp=document.getElementById("estadoApp");
+  const overlay=document.getElementById("overlay");
+  const overlayTxt=document.getElementById("overlayTxt");
+  const idiomaOCR=document.getElementById("idiomaOCR");
+  const modal=document.getElementById("modal");
+  const modalTitulo=document.getElementById("modalTitulo");
+  const modalBody=document.getElementById("modalBody");
+
+  let resultados=[];                       // { nombre, markdown, crudo }
+  let stats={archivos:0,paginas:0,ocr:0};
+
+  // ---------- Overlay de carga ----------
+  function mostrarCarga(t){overlayTxt.textContent=t; overlay.classList.add("show");}
+  function ocultarCarga(){overlay.classList.remove("show");}
+
+  // ---------- Toast (aviso breve que aparece abajo y se desvanece solo) ----------
+  const _toast=document.getElementById("toast");
+  function toast(msg,{error=false,ms=2200}={}){
+    _toast.textContent=msg;
+    _toast.classList.toggle("err",error);
+    _toast.classList.add("show");
+    clearTimeout(_toast._t);
+    _toast._t=setTimeout(()=>_toast.classList.remove("show"),ms);
+  }
+
+  // ---------- Modal ----------
+  function abrirModal(titulo,html){modalTitulo.textContent=titulo; modalBody.innerHTML=html; modal.classList.add("show");}
+  function cerrarModal(){modal.classList.remove("show");}
+  document.getElementById("modalX").addEventListener("click",cerrarModal);
+  modal.addEventListener("click",e=>{if(e.target===modal)cerrarModal();});
+  function escapar(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+  // ---------- Carga ----------
+  zona.addEventListener("click",()=>input.click());
+  zona.addEventListener("dragover",e=>{e.preventDefault();zona.classList.add("activo")});
+  zona.addEventListener("dragleave",()=>zona.classList.remove("activo"));
+  zona.addEventListener("drop",e=>{e.preventDefault();zona.classList.remove("activo");manejar(e.dataTransfer.files)});
+  input.addEventListener("change",()=>manejar(input.files));
+
+  // Cambio de idioma → reiniciar el pool de lectores OCR
+  idiomaOCR.addEventListener("change",async()=>{
+    if(idiomaOCR.value===idiomaActual)return;
+    idiomaActual=idiomaOCR.value;
+    estadoApp.textContent="Cambiando idioma OCR…";
+    await reiniciarPool();
+    estadoApp.textContent="Listo";
+  });
+
+  async function manejar(archivos){
+    document.querySelector(".filaVacia")?.remove();
+    mostrarCarga("Preparando…");
+    let n=0; const total=archivos.length;
+    for(const archivo of archivos){
+      n++;
+      const fila=crearFila(archivo);
+      try{
+        estadoApp.textContent="Procesando…";
+        mostrarCarga(`Convirtiendo ${archivo.name}`+(total>1?` (${n}/${total})`:""));
+        const r=await convertir(archivo,fila);
+        resultados.push({nombre:archivo.name,markdown:r.md,crudo:r.crudo||r.md,avisos:r.avisos||[]});
+        stats.archivos++; stats.paginas+=r.paginas; stats.ocr+=r.ocr;
+        marcar(fila,"✔ Convertido","ok");
+      }catch(err){
+        console.error(err);
+        marcar(fila,"✖ "+err.message,"err");
+      }
+      pintarSalida(); pintarStats();
+    }
+    ocultarCarga();
+    renderDiagnostico();
+    estadoApp.textContent="Listo";
+  }
+
+  // ---------- Tabla ----------
+  function tipoDe(ext){
+    if(ext==="pdf")return{cls:"pdf",txt:"PDF",grupo:"pdf"};
+    if(ext==="docx")return{cls:"word",txt:"Word",grupo:"office"};
+    if(ext==="xlsx"||ext==="xls")return{cls:"excel",txt:"Excel",grupo:"office"};
+    if(ext==="csv")return{cls:"excel",txt:"CSV",grupo:"office"};
+    if(["png","jpg","jpeg"].includes(ext))return{cls:"img",txt:"Imagen",grupo:"img"};
+    return{cls:"",txt:"Texto",grupo:"office"};
+  }
+  function crearFila(archivo){
+    const ext=archivo.name.split(".").pop().toLowerCase();
+    const t=tipoDe(ext);
+    const tr=document.createElement("tr");
+    tr.dataset.grupo=t.grupo;
+    tr.innerHTML=`<td>${archivo.name}</td>
+      <td><span class="badge ${t.cls}">${t.txt}</span></td>
+      <td><span class="est">⏳ Procesando…</span></td>`;
+    tabla.appendChild(tr);
+    aplicarFiltro();
+    return tr;
+  }
+  function marcar(tr,txt,cls){const e=tr.querySelector(".est");e.textContent=txt;e.className="est "+cls}
+  function paso(tr,txt){tr.querySelector(".est").textContent=txt; if(overlay.classList.contains("show"))overlayTxt.textContent=txt;}
+
+  // ---------- Filtros ----------
+  let filtroActivo="all";
+  document.getElementById("filtros").addEventListener("click",e=>{
+    if(e.target.tagName!=="BUTTON")return;
+    document.querySelectorAll("#filtros button").forEach(b=>b.classList.remove("on"));
+    e.target.classList.add("on"); filtroActivo=e.target.dataset.f; aplicarFiltro();
+  });
+  function aplicarFiltro(){
+    document.querySelectorAll("#tabla tr").forEach(tr=>{
+      if(tr.classList.contains("filaVacia"))return;
+      tr.style.display=(filtroActivo==="all"||tr.dataset.grupo===filtroActivo)?"":"none";
+    });
+  }
+
+  // ---------- Conversión ----------
+  // Todas las rutas devuelven {md, paginas, ocr, crudo?}. "crudo" sólo lo traen
+  // las rutas con OCR (texto sin corregir) para alimentar el diagnóstico.
+  async function convertir(archivo,fila){
+    const ext=archivo.name.split(".").pop().toLowerCase();
+    if(ext==="pdf")return await pdf(archivo,fila);
+    if(ext==="docx")return {md:await word(archivo),paginas:1,ocr:0};
+    if(ext==="xlsx"||ext==="xls")return await excel(archivo);
+    if(ext==="csv")return {md:tabla2md((await archivo.text()).trim().split(/\r?\n/).map(l=>l.split(","))),paginas:1,ocr:0};
+    if(ext==="txt"||ext==="md")return {md:await archivo.text(),paginas:1,ocr:0};
+    if(["png","jpg","jpeg"].includes(ext)){const r=await imagen(archivo,fila); return {md:r.md,crudo:r.crudo,paginas:1,ocr:1};}
+    throw new Error("Formato no soportado (."+ext+")");
+  }
+
+  // PDF con OCR automático y en paralelo
+  async function pdf(archivo,fila){
+    const buffer=await archivo.arrayBuffer();
+    const doc=await pdfjsLib.getDocument({data:buffer}).promise;
+    const total=doc.numPages;
+    const salidas=new Array(total+1).fill("");   // texto final (corregido en páginas OCR)
+    const crudos=new Array(total+1).fill(null);  // texto OCR sin corregir (solo escaneadas)
+    const escaneadas=[]; let ocrCount=0, hechas=0;
+    const avisos=[];                             // avisos de layout (columnas asimétricas)
+
+    // 1) Texto digital directo (rápido). Reconstruye líneas/columnas por
+    //    posición y aplica SOLO correccionesLayout (nunca corregirOCR: el
+    //    texto digital ya es exacto y las correcciones de carácter lo dañarían).
+    for(let i=1;i<=total;i++){
+      const pag=await doc.getPage(i);
+      const cont=await pag.getTextContent();
+      const ancho=pag.getViewport({scale:1}).width;
+      const items=cont.items.map(it=>({str:it.str,x:it.transform[4],y:it.transform[5],w:it.width||0}));
+      const avisosPag=[];
+      const t=reconstruirColumnas(items,ancho,avisosPag);
+      avisosPag.forEach(a=>avisos.push({...a,pagina:i}));
+      if(t.replace(/\s/g,"").length<10){escaneadas.push(i);}
+      else {salidas[i]=correccionesLayout(t); hechas++;}
+    }
+    paso(fila,`📄 ${hechas}/${total} con texto`);
+
+    // 2) Páginas escaneadas → OCR en paralelo (+ corrección)
+    if(escaneadas.length){
+      ocrCount=escaneadas.length;
+      const tareas=escaneadas.map(i=>async()=>{
+        const pag=await doc.getPage(i);
+        const canvas=await render(pag); preprocesar(canvas);
+        const raw=await reconocer(canvas);
+        crudos[i]=raw; salidas[i]=procesarOCRTexto(raw);
+        hechas++; paso(fila,`🔍 OCR ${hechas}/${total} páginas…`);
+      });
+      await enParalelo(tareas);
+    }
+    let md="", crudo="";
+    for(let i=1;i<=total;i++){
+      md   +=`\n\n## Página ${i}\n\n${salidas[i]}`;
+      crudo+=`\n\n## Página ${i}\n\n${crudos[i]??salidas[i]}`;
+    }
+    return {md:md.trim(),crudo:crudo.trim(),paginas:total,ocr:ocrCount,avisos};
+  }
+
+  async function word(archivo){
+    const res=await mammoth.convertToHtml({arrayBuffer:await archivo.arrayBuffer()});
+    return new TurndownService({headingStyle:"atx"}).turndown(res.value);
+  }
+  async function excel(archivo){
+    const libro=XLSX.read(await archivo.arrayBuffer(),{type:"array"});
+    let md="";
+    libro.SheetNames.forEach(h=>{
+      const filas=XLSX.utils.sheet_to_json(libro.Sheets[h],{header:1,defval:""});
+      md+=`\n\n## Hoja: ${h}\n\n`+tabla2md(filas);
+    });
+    return {md:md.trim(),paginas:libro.SheetNames.length,ocr:0};
+  }
+  async function imagen(archivo,fila){
+    paso(fila,"🔍 Leyendo con OCR…");
+    // Mismo pipeline que las páginas escaneadas de PDF: escalar + preprocesar
+    // antes del OCR. Pasar el File crudo a Tesseract daba lecturas vacías o pobres.
+    const canvas=await imagenACanvas(archivo);
+    preprocesar(canvas);
+    const raw=await reconocer(canvas);
+    return {md:procesarOCRTexto(raw),crudo:raw};
+  }
+
+  // Carga una imagen en un canvas, escalándola para que el OCR la lea mejor
+  function imagenACanvas(archivo){
+    return new Promise((res,rej)=>{
+      const url=URL.createObjectURL(archivo);
+      const img=new Image();
+      img.onload=()=>{
+        const escala=Math.min(3,Math.max(1,2200/img.naturalWidth)); // ~2200px de ancho
+        const c=document.createElement("canvas");
+        c.width=Math.round(img.naturalWidth*escala);
+        c.height=Math.round(img.naturalHeight*escala);
+        const ctx=c.getContext("2d");
+        ctx.fillStyle="#fff"; ctx.fillRect(0,0,c.width,c.height); // fondo blanco (PNG transparente)
+        ctx.drawImage(img,0,0,c.width,c.height);
+        URL.revokeObjectURL(url); res(c);
+      };
+      img.onerror=()=>{URL.revokeObjectURL(url); rej(new Error("No se pudo leer la imagen"));};
+      img.src=url;
+    });
+  }
+
+  function tabla2md(filas){
+    const l=filas.filter(f=>f.some(c=>String(c).trim()!==""));
+    if(!l.length)return "_(vacío)_";
+    const cols=Math.max(...l.map(f=>f.length));
+    const fila=f=>"| "+Array.from({length:cols},(_,i)=>String(f[i]??"").trim()).join(" | ")+" |";
+    let md=fila(l[0])+"\n| "+Array(cols).fill("---").join(" | ")+" |\n";
+    for(let i=1;i<l.length;i++)md+=fila(l[i])+"\n";
+    return md;
+  }
+
+  // ====================================================================
+  //  CORRECCIÓN DE OCR — calibración v1.1
+  //  Corrige confusiones frecuentes del OCR por CONTEXTO DE ZONA, token a
+  //  token, sin reformatear el documento. Nunca cambia un dígito por otro
+  //  dígito (5→3, 6→0…): eso exige ver la imagen. Preserva espacios, saltos
+  //  de línea, mayúsculas, ceros a la izquierda y separadores.
+  // ====================================================================
+
+  // Diccionarios EXTENSIBLES (se aplican a líneas completas, antes de tokenizar)
+  const MARCAS_CONOCIDAS = {     // logos/instituciones mal leídos
+    "BBYA":"BBVA", "BB YA":"BBVA", "BBVÁ":"BBVA"
+  };
+  const ABREV_VIALES = {         // abreviaturas viales estandarizadas
+    "ELYD":"BLVD", "BLYD":"BLVD", "BL YD":"BLVD"
+  };
+  function aplicarDiccionarios(texto){
+    let t=texto;
+    for(const dic of [MARCAS_CONOCIDAS,ABREV_VIALES])
+      for(const [mal,bien] of Object.entries(dic))
+        t=t.split(mal).join(bien);
+    return t;
+  }
+
+  // Letra ambigua → dígito (zona numérica)
+  const NUM_DESDE_LETRA={O:'0',o:'0',Q:'0',I:'1',l:'1',L:'1','|':'1',B:'8',H:'8',g:'9'};
+  // Correo donde la Q hace de @ :  usuario Q dominio.tld
+  const RE_EMAIL_Q=/^([A-Za-z0-9._%-]+?)Q([A-Za-z0-9.-]+\.[A-Za-z]{2,})$/;
+
+  // Punto usado como separador de miles → coma. Decimal = último grupo de 2 dígitos.
+  function corregirSeparadores(tok){
+    if(!/^\d[\d.,]*\d$/.test(tok)) return tok;          // solo dígitos + . , (extremos dígito)
+    if(!/[.,]/.test(tok)) return tok;                   // sin separadores: no es monto
+    const partes=tok.split(/[.,]/);
+    const dec=partes[partes.length-1];
+    if(dec.length!==2) return tok;                      // el último grupo debe ser el decimal (2 díg.)
+    if(partes[0].length<1 || partes[0].length>3) return tok;
+    for(let i=1;i<partes.length-1;i++) if(partes[i].length!==3) return tok; // miles = 3 díg.
+    let out=partes[0];
+    for(let i=1;i<partes.length-1;i++) out+=","+partes[i];   // miles → coma
+    return out+"."+dec;                                      // decimal → punto
+  }
+
+  function corregirToken(tok){
+    // 0) Correo ya válido → no tocar
+    if(tok.includes("@")) return tok;
+    // 1) Q que actúa como @ en un correo
+    if(RE_EMAIL_Q.test(tok)) return tok.replace(RE_EMAIL_Q,"$1@$2");
+
+    let t=tok;
+    // 2) Pipe "|" como 1 cuando toca un dígito (tablas con líneas verticales)
+    t=t.replace(/\|(?=\d)|(?<=\d)\|/g,"1");
+
+    const digitos=(t.match(/\d/g)||[]).length;
+
+    // 3) Fecha de 8 dígitos sin separadores → DD/MM/AAAA (con validación de rango)
+    if(/^\d{8}$/.test(t)){
+      const d=+t.slice(0,2), m=+t.slice(2,4), a=+t.slice(4);
+      if(d>=1&&d<=31 && m>=1&&m<=12 && a>=1900&&a<=2099)
+        return `${t.slice(0,2)}/${t.slice(2,4)}/${t.slice(4)}`;
+    }
+
+    // 4) ZONA NUMÉRICA: ≥2 dígitos y toda letra es ambigua → letras a dígitos
+    const letrasArr=t.match(/[A-Za-zÁÉÍÓÚÑáéíóúñ]/g)||[];
+    const todasAmbiguas=letrasArr.length>0 && letrasArr.every(c=>/[OoQIlLBHg]/.test(c));
+    if(digitos>=2 && (letrasArr.length===0 || todasAmbiguas)){
+      t=t.replace(/(?<=\d)c(?=\d)/g,"0");                 // "c" entre dígitos → 0
+      t=t.replace(/[OoQIlLBHg|]/g,c=>NUM_DESDE_LETRA[c]??c);
+    }
+
+    // 5) Separadores de monto (punto de miles → coma)
+    t=corregirSeparadores(t);
+
+    // 6) ZONA ALFABÉTICA: ≥2 letras y sus únicos dígitos son 0/1 → a letras
+    const letras2=(t.match(/[A-Za-zÁÉÍÓÚÑáéíóúñ]/g)||[]).length;
+    const ds=t.match(/\d/g)||[];
+    if(letras2>=2 && ds.length>0 && ds.every(c=>c==="0"||c==="1"))
+      t=t.replace(/0/g,"O").replace(/1/g,"I");
+
+    return t;
+  }
+  function corregirOCR(t){return t?aplicarDiccionarios(t).replace(/\S+/g,corregirToken):t;}
+
+  // ====================================================================
+  //  CORRECCIONES DE LAYOUT — calibración v1.1.1
+  //  Errores de ESTRUCTURA (no de carácter). Se aplican a TODO documento
+  //  (digital y OCR), a diferencia de corregirOCR() que es solo para OCR.
+  // ====================================================================
+
+  // Une dígitos sueltos separados por UN espacio (números partidos al leer
+  // columnas adyacentes): "1 8"→"18" · "1 2 3"→"123" · "2 1,088"→"21,088".
+  // No toca dígitos aislados ("por 3 seg") ni grupos multidígito ("20 21"),
+  // gracias a los lookarounds (?<!\d) … (?!\d).
+  function correccionesLayout(texto){
+    if(!texto) return texto;
+    return texto.replace(/(?<!\d)\d(?: \d)+(?!\d)/g, m=>m.replace(/ /g,""));
+  }
+
+  // ---- Reconstrucción de layout en PDF de texto digital ----
+  // Agrupa los fragmentos por su posición Y en líneas y, dentro de cada línea,
+  // por X. Si detecta un canalón vertical central (documento de dos columnas),
+  // separa en columna izquierda + derecha (izquierda primero).
+  function agruparLineas(items){
+    const TOL=3, lineas=[];
+    items.forEach(it=>{
+      let L=lineas.find(l=>Math.abs(l.y-it.y)<=TOL);
+      if(!L){L={y:it.y,items:[]}; lineas.push(L);}
+      L.items.push(it);
+    });
+    lineas.sort((a,b)=>b.y-a.y);                       // de arriba a abajo
+    return lineas.map(l=>l.items.sort((a,b)=>a.x-b.x)  // de izquierda a derecha
+      .map(i=>i.str).join(" ").replace(/ {2,}/g," ").trim()).filter(Boolean);
+  }
+  // Devuelve la X de corte si la página tiene 2 columnas; si no, null.
+  function detectarCorte(items,ancho){
+    if(!ancho || items.length<6) return null;
+    const N=100, ocup=new Array(N).fill(false);        // resolución fina
+    for(const it of items){
+      const a=Math.max(0,Math.floor(it.x/ancho*N));
+      const b=Math.min(N-1,Math.floor((it.x+it.w)/ancho*N));
+      for(let k=a;k<=b;k++) ocup[k]=true;
+    }
+    // Zona de búsqueda amplia [25%,75%] para captar canalones de columnas
+    // muy desiguales (p.ej. izquierda estrecha + derecha ancha).
+    const ini=Math.floor(N*0.25), fin=Math.ceil(N*0.75);
+    let mejor=null, run=0, start=ini;
+    for(let k=ini;k<=fin;k++){
+      if(!ocup[k]){ if(run===0)start=k; run++; if(!mejor||run>mejor.len) mejor={start,len:run}; }
+      else run=0;
+    }
+    // Canalón típico de 2 columnas ≈ 3-5% del ancho. Umbral 3% (mín. 2 celdas).
+    if(!mejor || mejor.len < Math.max(2,N*0.03)) return null;
+    const corte=(mejor.start+mejor.len/2)/N*ancho;
+    const izq=items.filter(it=>(it.x+it.w/2)<corte).length;
+    if(izq<items.length*0.2 || (items.length-izq)<items.length*0.2) return null; // texto en ambos lados
+    return corte;
+  }
+  function anchoDe(items){
+    if(!items.length) return 0;
+    return Math.max(...items.map(i=>i.x+i.w)) - Math.min(...items.map(i=>i.x));
+  }
+  // PRINCIPIO RECTOR v1.1.2: la columna se define por POSICIÓN ABSOLUTA (X menor
+  // = izquierda, va SIEMPRE primero). Ni densidad, ni tamaño de fuente, ni ancho
+  // alteran el orden. El corte cae en el canalón entre columnas, así que items
+  // de menor X quedan a la izquierda independientemente del ancho de cada columna.
+  function reconstruirColumnas(items,ancho,avisos){
+    items=items.filter(it=>it.str && it.str.trim());
+    if(items.length<2) return items.map(i=>i.str).join(" ");
+    const corte=detectarCorte(items,ancho);
+    if(corte==null) return agruparLineas(items).join("\n");
+    const izq=items.filter(it=>(it.x+it.w/2)<corte);
+    const der=items.filter(it=>(it.x+it.w/2)>=corte);
+    if(avisos){
+      const cls=clasificarAsimetria({anchoColumnaIzq:anchoDe(izq),anchoColumnaDer:anchoDe(der)});
+      if(cls.advertencia) avisos.push(cls);
+    }
+    return agruparLineas(izq).join("\n")+"\n\n---\n\n"+agruparLineas(der).join("\n"); // izquierda primero
+  }
+
+  // Clasifica la asimetría de ancho entre columnas (no altera el orden).
+  function clasificarAsimetria(layout){
+    const aIzq=layout.anchoColumnaIzq ?? layout.columnaIzquierda?.ancho ?? 0;
+    const aDer=layout.anchoColumnaDer ?? layout.columnaDerecha?.ancho ?? 0;
+    const ratio=aDer? aIzq/aDer : 1;
+    if(ratio<0.6) return {tipo:"ASIMETRICA_IZQ_ESTRECHA",advertencia:"Columna izquierda más estrecha. Verificar orden visual.",accion:"Priorizar posición absoluta sobre densidad de contenido."};
+    if(ratio>1.6) return {tipo:"ASIMETRICA_DER_ESTRECHA",advertencia:"Columna derecha más estrecha. Verificar orden visual.",accion:"Priorizar posición absoluta sobre densidad de contenido."};
+    return {tipo:"SIMETRICA",advertencia:null,accion:"Procesamiento estándar."};
+  }
+  // Concatena SIEMPRE columna izquierda primero (acepta bloques o {texto}).
+  function extraerEnOrdenCorrecto(layout){
+    const txt=col=>Array.isArray(col)?col.map(b=>b.texto).join("\n"):(col&&col.texto)||"";
+    return txt(layout.columnaIzquierda)+"\n\n---\n\n"+txt(layout.columnaDerecha);
+  }
+
+  // Pipeline de texto OCR: corrección de caracteres + de layout.
+  // (El texto DIGITAL solo recibe correccionesLayout, nunca corregirOCR.)
+  function procesarOCRTexto(raw){return correccionesLayout(corregirOCR(raw));}
+
+  // ====================================================================
+  //  DIAGNÓSTICO AUTOMÁTICO — analiza el texto convertido y reporta calidad
+  // ====================================================================
+  class DiagnosticoOCR{
+    constructor(textoOriginalOCR,textoCorregido,nombreArchivo){
+      this.original=textoOriginalOCR||"";
+      this.corregido=textoCorregido||"";
+      this.archivo=nombreArchivo;
+      this.errores=[]; this.advertencias=[]; this.estadisticas={};
+    }
+    _lineas(){return this.corregido.split("\n");}
+
+    analizar(){
+      this.detectarCorreosCorruptos();
+      this.detectarMontosInconsistentes();
+      this.detectarFechasAnomalas();
+      this.detectarSecuenciasCortas();
+      this.detectarCaracteresAmbiguos();
+      this.detectarEtiquetasDiagrama();
+      this.calcularEstadisticas();
+      return this.generarReporte();
+    }
+    // Líneas que parecen etiquetas de diagrama (A B C D…). No se modifican:
+    // solo se avisa para cotejar el orden contra la imagen original.
+    detectarEtiquetasDiagrama(){
+      this._lineas().forEach((ln,i)=>{
+        if(/^([A-Za-z0-9]\s){3,}[A-Za-z0-9]$/.test(ln.trim()))
+          this.advertencias.push({linea:i+1,tipo:"diagrama",detalle:`Posibles etiquetas de diagrama — verificar orden contra la imagen: ${ln.trim()}`});
+      });
+    }
+    detectarCorreosCorruptos(){
+      this._lineas().forEach((ln,i)=>ln.split(/\s+/).forEach(tok=>{
+        if(/^[A-Za-z0-9._%-]+Q[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(tok))
+          this.errores.push({linea:i+1,tipo:"correo",detalle:`Correo posiblemente corrupto (Q en vez de @): ${tok}`});
+      }));
+    }
+    detectarMontosInconsistentes(){
+      this._lineas().forEach((ln,i)=>ln.split(/\s+/).forEach(tok=>{
+        if(!/^\d[\d.,]*\d$/.test(tok)||!/[.,]/.test(tok))return;
+        const bien=/^\d{1,3}(,\d{3})*(\.\d{2})?$/.test(tok)||/^\d+\.\d{2}$/.test(tok)||/^\d+$/.test(tok);
+        if(!bien) this.advertencias.push({linea:i+1,tipo:"monto",detalle:`Monto con separadores dudosos: ${tok}`});
+      }));
+    }
+    detectarFechasAnomalas(){
+      this._lineas().forEach((ln,i)=>(ln.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g)||[]).forEach(f=>{
+        const [d,m]=f.split("/").map(Number);
+        if(d<1||d>31||m<1||m>12)
+          this.advertencias.push({linea:i+1,tipo:"fecha",detalle:`Fecha fuera de rango: ${f}`});
+      }));
+    }
+    detectarSecuenciasCortas(){
+      const reglas=[{re:/clabe/i,n:18,et:"CLABE"},{re:/cuenta/i,n:10,et:"cuenta"},{re:/tarjeta/i,n:16,et:"tarjeta"}];
+      this._lineas().forEach((ln,i)=>reglas.forEach(r=>{
+        if(!r.re.test(ln))return;
+        const nums=ln.match(/\d[\d ]{2,}\d/g)||[];
+        const max=Math.max(0,...nums.map(s=>s.replace(/\D/g,"").length));
+        if(max>0 && max<r.n)
+          this.advertencias.push({linea:i+1,tipo:"secuencia",detalle:`Posible secuencia truncada cerca de "${r.et}" (${max} dígitos, se esperan ${r.n})`});
+      }));
+    }
+    detectarCaracteresAmbiguos(){
+      this._lineas().forEach((ln,i)=>ln.split(/\s+/).forEach(tok=>{
+        if(tok.length<4)return;
+        const amb=(tok.match(/[OIl|]/g)||[]).length;
+        const alfa=(tok.match(/[A-Za-z0-9]/g)||[]).length||1;
+        if(alfa>=4 && amb/alfa>0.5)
+          this.advertencias.push({linea:i+1,tipo:"ambiguo",detalle:`Token con muchos caracteres ambiguos: ${tok}`});
+      }));
+    }
+    calcularEstadisticas(){
+      const o=this.original.match(/\S+/g)||[], c=this.corregido.match(/\S+/g)||[];
+      let corr=0; const n=Math.min(o.length,c.length);
+      for(let i=0;i<n;i++) if(o[i]!==c[i]) corr++;
+      corr+=Math.abs(o.length-c.length);
+      this.estadisticas={correcciones:corr,tokens:c.length,lineas:this._lineas().length};
+    }
+    calcularConfianza(){
+      let conf=100 - this.errores.length*15 - this.advertencias.length*5;
+      return Math.max(0,Math.min(100,Math.round(conf)));
+    }
+    generarRecomendacion(){
+      const c=this.calcularConfianza();
+      if(c>=85) return "APROBADO: texto listo para uso.";
+      if(c>=60) return `REVISAR: se detectaron ${this.errores.length+this.advertencias.length} campos con posibles errores.`;
+      return "RECHAZAR: calidad insuficiente, se recomienda re-escanear.";
+    }
+    generarReporte(){
+      return {
+        archivo:this.archivo,
+        timestamp:new Date().toISOString(),
+        resumen:{
+          correccionesAplicadas:this.estadisticas.correcciones,
+          advertenciasGeneradas:this.advertencias.length,
+          camposCriticosDetectados:this.errores.length,
+          confianzaGeneral:this.calcularConfianza()
+        },
+        erroresCriticos:this.errores,
+        advertencias:this.advertencias,
+        recomendacion:this.generarRecomendacion()
+      };
+    }
+  }
+
+  // ---------- Render del panel de diagnóstico ----------
+  let ultimoDiagnostico=null;
+  function renderDiagnostico(){
+    const diag=document.getElementById("diag");
+    if(!resultados.length){diag.style.display="none";return;}
+    const reportes=resultados.map(r=>{
+      const d=new DiagnosticoOCR(r.crudo,r.markdown,r.nombre).analizar();
+      // Inyecta los avisos de layout (columnas asimétricas) detectados al extraer
+      (r.avisos||[]).forEach(a=>d.advertencias.push({linea:a.pagina?`pág.${a.pagina}`:"—",tipo:a.tipo,detalle:`${a.advertencia} (${a.accion})`}));
+      d.resumen.advertenciasGeneradas=d.advertencias.length;
+      d.resumen.confianzaGeneral=Math.max(0,Math.min(100,Math.round(100-d.erroresCriticos.length*15-d.advertencias.length*5)));
+      return d;
+    });
+    ultimoDiagnostico={generado:new Date().toISOString(),archivos:reportes};
+
+    let corr=0; const advs=[], errs=[], confs=[];
+    reportes.forEach(d=>{
+      corr+=d.resumen.correccionesAplicadas;
+      confs.push(d.resumen.confianzaGeneral);
+      d.advertencias.forEach(a=>advs.push({...a,archivo:d.archivo}));
+      d.erroresCriticos.forEach(e=>errs.push({...e,archivo:d.archivo}));
+    });
+    const conf=confs.length?Math.round(confs.reduce((a,b)=>a+b,0)/confs.length):100;
+    const color=conf>=85?"#16a34a":conf>=60?"#d99a00":"#c0392b";
+    const sem  =conf>=85?"🟢":conf>=60?"🟡":"🔴";
+    const rec  =conf>=85?"APROBADO":conf>=60?"REVISAR":"RECHAZAR";
+
+    const bar=document.getElementById("diagBar");
+    bar.style.width=conf+"%"; bar.style.background=color;
+    document.getElementById("diagPct").textContent=conf+"%";
+    document.getElementById("diagSemaforo").textContent=sem;
+    document.getElementById("diagRec").textContent=rec;
+    document.getElementById("diagCorr").textContent=corr;
+    document.getElementById("diagAdv").textContent=advs.length;
+    document.getElementById("diagCrit").textContent=errs.length;
+
+    const items=[...errs.map(e=>({...e,clase:"crit",ic:"❌"})),...advs.map(a=>({...a,clase:"warn",ic:"⚠"}))].slice(0,30);
+    document.getElementById("diagList").innerHTML=items.length
+      ? items.map(it=>{const ref=/^\d+$/.test(String(it.linea))?`L${it.linea}`:escapar(String(it.linea)); return `<li class="${it.clase}">${it.ic} <b>${escapar(it.archivo)}</b> · ${ref}: ${escapar(it.detalle)}</li>`;}).join("")
+      : `<li>✅ Sin anomalías detectadas.</li>`;
+    diag.style.display="block";
+  }
+  document.getElementById("diagHead").addEventListener("click",()=>{
+    const b=document.getElementById("diagBody");
+    b.classList.toggle("oculto");
+    document.getElementById("diagToggle").textContent=b.classList.contains("oculto")?"▶":"▼";
+  });
+  document.getElementById("diagDetalle").addEventListener("click",()=>{
+    if(!ultimoDiagnostico)return;
+    const html=ultimoDiagnostico.archivos.map(d=>{
+      const lst=[...d.erroresCriticos.map(e=>`<li class="crit">❌ L${e.linea}: ${escapar(e.detalle)}</li>`),
+                 ...d.advertencias.map(a=>`<li class="warn">⚠ L${a.linea}: ${escapar(a.detalle)}</li>`)].join("")||"<li>✅ Sin anomalías.</li>";
+      return `<h4 style="margin:14px 0 6px">${escapar(d.archivo)} — ${d.resumen.confianzaGeneral}% · ${escapar(d.recomendacion)}</h4><ul class="diag-list">${lst}</ul>`;
+    }).join("");
+    abrirModal("Detalle de diagnóstico",html);
+  });
+  document.getElementById("diagExport").addEventListener("click",()=>{
+    if(!ultimoDiagnostico)return;
+    const blob=new Blob([JSON.stringify(ultimoDiagnostico,null,2)],{type:"application/json"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob); a.download="diagnostico-ocr.json"; a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  // ====================================================================
+  //  MOTOR OCR (multi-idioma) — render, preproceso y pool de lectores
+  // ====================================================================
+  async function render(pag){
+    const base=pag.getViewport({scale:1});
+    const escala=Math.min(3,2200/base.width);          // ~2200px de ancho
+    const vp=pag.getViewport({scale:escala});
+    const c=document.createElement("canvas");
+    c.width=vp.width; c.height=vp.height;
+    await pag.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
+    return c;
+  }
+  function preprocesar(c){
+    const ctx=c.getContext("2d");
+    const img=ctx.getImageData(0,0,c.width,c.height), d=img.data;
+    for(let i=0;i<d.length;i+=4){
+      let g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+      g=g<140?g*0.55:Math.min(255,g*1.2);             // resalta el texto negro
+      d[i]=d[i+1]=d[i+2]=g;
+    }
+    ctx.putImageData(img,0,0);
+  }
+
+  // Pool de lectores Tesseract en el/los idioma(s) elegidos
+  let pool=null;
+  let idiomaActual=idiomaOCR.value;                   // p.ej. "spa+eng"
+  async function obtenerPool(){
+    if(pool)return pool;
+    const n=Math.min(3,Math.max(1,(navigator.hardwareConcurrency||4)-2));
+    estadoApp.textContent="Preparando OCR…";
+    pool=[];
+    for(let i=0;i<n;i++){
+      const w=await Tesseract.createWorker(idiomaActual);
+      await w.setParameters({tessedit_pageseg_mode:"1",preserve_interword_spaces:"1"});
+      pool.push({w,libre:true});
+    }
+    return pool;
+  }
+  async function reiniciarPool(){
+    if(!pool)return;
+    const viejo=pool; pool=null;
+    for(const s of viejo){ try{await s.w.terminate();}catch(e){} }
+  }
+  // reconocer() devuelve el texto OCR CRUDO (la corrección se aplica fuera)
+  async function reconocer(imagen){
+    const p=await obtenerPool();
+    let slot;
+    while(!(slot=p.find(s=>s.libre))) await new Promise(r=>setTimeout(r,40));
+    slot.libre=false;
+    try{const {data:{text}}=await slot.w.recognize(imagen); return text.trim();}
+    finally{slot.libre=true;}
+  }
+  async function enParalelo(tareas){
+    const p=await obtenerPool(), limite=p.length, corriendo=[], todas=[];
+    for(const t of tareas){
+      const pr=Promise.resolve().then(t); todas.push(pr); corriendo.push(pr);
+      pr.finally(()=>corriendo.splice(corriendo.indexOf(pr),1));
+      if(corriendo.length>=limite) await Promise.race(corriendo);
+    }
+    await Promise.all(todas);
+  }
+
+  // ---------- Salida y estadísticas ----------
+  function pintarSalida(){
+    if(!resultados.length)return;
+    texto.value=resultados.map(r=>`# ${r.nombre}\n\n${r.markdown}`).join("\n\n---\n\n");
+    salida.style.display="block";
+  }
+  function pintarStats(){
+    document.getElementById("stArchivos").textContent=stats.archivos;
+    document.getElementById("stPaginas").textContent=stats.paginas;
+    document.getElementById("stOcr").textContent=stats.ocr;
+    const kb=Math.round((texto.value.length/1024)*10)/10;
+    document.getElementById("stTam").textContent=kb+" KB";
+  }
+
+  // ====================================================================
+  //  TESTSUITE — pruebas de calibración de corregirOCR()
+  // ====================================================================
+  const CASOS_DE_PRUEBA=[
+    // GRUPO 1: Corrección de @ (arroba)
+    {id:"AT-001",descripcion:"Correo con Q en lugar de @",entrada:"contactoQgmail.com",esperado:"contacto@gmail.com",categoria:"arroba"},
+    {id:"AT-002",descripcion:"Correo con dominio .mx",entrada:"usuarioQempresa.mx",esperado:"usuario@empresa.mx",categoria:"arroba"},
+    {id:"AT-003",descripcion:"Q en contexto NO de correo — no debe cambiar",entrada:"QUERY",esperado:"QUERY",categoria:"arroba"},
+    // GRUPO 2: Separadores de montos
+    {id:"MON-001",descripcion:"Punto como separador de miles",entrada:"182.310.37",esperado:"182,310.37",categoria:"montos"},
+    {id:"MON-002",descripcion:"Punto inicial como miles, coma como decimal",entrada:"1.180,225.51",esperado:"1,180,225.51",categoria:"montos"},
+    {id:"MON-003",descripcion:"Monto simple sin separador de miles",entrada:"692.92",esperado:"692.92",categoria:"montos"},
+    {id:"MON-004",descripcion:"Número que NO es monto — no debe cambiar",entrada:"34077",esperado:"34077",categoria:"montos"},
+    // GRUPO 3: Marcas conocidas
+    {id:"MRC-001",descripcion:"Logo BBVA reconocido como BBYA",entrada:"BBYA",esperado:"BBVA",categoria:"marcas"},
+    {id:"MRC-002",descripcion:"BBVA correcto — no debe cambiar",entrada:"BBVA",esperado:"BBVA",categoria:"marcas"},
+    // GRUPO 4: Zona numérica — letras como dígitos
+    {id:"NUM-001",descripcion:"O en secuencia numérica larga",entrada:"OO5396",esperado:"005396",categoria:"zona_numerica"},
+    {id:"NUM-002",descripcion:"H en medio de número",entrada:"9H00.50",esperado:"9800.50",categoria:"zona_numerica"},
+    {id:"NUM-003",descripcion:"Pipe como 1 en secuencia numérica",entrada:"|80,000.00",esperado:"180,000.00",categoria:"zona_numerica"},
+    // GRUPO 5: Zona alfabética — dígitos como letras
+    {id:"ALC-001",descripcion:"0 como O en palabra alfabética",entrada:"HELL0",esperado:"HELLO",categoria:"zona_alfabetica"},
+    {id:"ALC-002",descripcion:"1 como I en palabra alfabética",entrada:"1NSTITUTO",esperado:"INSTITUTO",categoria:"zona_alfabetica"},
+    // GRUPO 6: Fechas
+    {id:"FEC-001",descripcion:"Fecha sin separadores — insertar slashes",entrada:"31072024",esperado:"31/07/2024",categoria:"fechas"},
+    {id:"FEC-002",descripcion:"Fecha correcta — no debe cambiar",entrada:"24/07/2025",esperado:"24/07/2025",categoria:"fechas"},
+    // GRUPO 7: Casos que NO deben ser corregidos
+    {id:"NEG-001",descripcion:"Token alfanumérico real AREA51",entrada:"AREA51",esperado:"AREA51",categoria:"sin_cambio"},
+    {id:"NEG-002",descripcion:"Porcentaje — no tocar",entrada:"5%",esperado:"5%",categoria:"sin_cambio"},
+    {id:"NEG-003",descripcion:"RFC — no tocar dígitos por letras ni viceversa",entrada:"GLA2104156B3",esperado:"GLA2104156B3",categoria:"sin_cambio"},
+    {id:"NEG-004",descripcion:"Año — no confundir con monto",entrada:"2021",esperado:"2021",categoria:"sin_cambio"},
+    // GRUPO 8: Layout multi-columna (correccionesLayout)
+    {id:"LAY-001",descripcion:"Número de página con espacio insertado — 2 dígitos",entrada:"SEGURIDAD DEL HORNO MICROONDAS  1 8",esperado:"SEGURIDAD DEL HORNO MICROONDAS  18",categoria:"layout_columnas"},
+    {id:"LAY-002",descripcion:"Número de página con espacio insertado — variante",entrada:"INSTRUCCIONES DE INSTALACIÓN  2 0",esperado:"INSTRUCCIONES DE INSTALACIÓN  20",categoria:"layout_columnas"},
+    {id:"LAY-003",descripcion:"Número de página de 1 dígito — no debe cambiar",entrada:"MICROWAVE OVEN SAFETY  3",esperado:"MICROWAVE OVEN SAFETY  3",categoria:"layout_columnas"},
+    {id:"LAY-004",descripcion:"Número de página con espacio — 3 dígitos",entrada:"SECCIÓN PRINCIPAL  1 2 3",esperado:"SECCIÓN PRINCIPAL  123",categoria:"layout_columnas"},
+    {id:"LAY-005",descripcion:"Etiqueta de diagrama — preservar sin modificar",entrada:"A B C D E F G",esperado:"A B C D E F G",categoria:"layout_diagrama"},
+    {id:"LAY-006",descripcion:"Monto monetario — no confundir con número de página",entrada:"Total a pagar  2 1,088",esperado:"Total a pagar  21,088",categoria:"layout_columnas"},
+    {id:"LAY-007",descripcion:"Texto normal con número al final — no debe cambiar",entrada:"Presione Start por 3 segundos",esperado:"Presione Start por 3 segundos",categoria:"layout_columnas"},
+    // GRUPO 9: Columnas asimétricas — la izquierda (X menor) SIEMPRE va primero
+    {id:"ASM-001",descripcion:"Izquierda estrecha precede a derecha ancha",
+      layout:{columnaIzquierda:{bordeIzquierdo:50,ancho:180,texto:"In Canada\n1-800-807-6777"},columnaDerecha:{bordeIzquierdo:260,ancho:320,texto:"In the U.S.A.\n1-800-422-1230"}},
+      esperado:"In Canada\n1-800-807-6777\n\n---\n\nIn the U.S.A.\n1-800-422-1230",categoria:"columnas_asimetricas"},
+    {id:"ASM-002",descripcion:"Izquierda ancha precede a derecha estrecha",
+      layout:{columnaIzquierda:{bordeIzquierdo:50,ancho:320,texto:"Sección principal\nContenido extenso"},columnaDerecha:{bordeIzquierdo:400,ancho:150,texto:"Nota al margen"}},
+      esperado:"Sección principal\nContenido extenso\n\n---\n\nNota al margen",categoria:"columnas_asimetricas"},
+    {id:"ASM-003",descripcion:"Columnas simétricas — orden se mantiene",
+      layout:{columnaIzquierda:{bordeIzquierdo:50,ancho:240,texto:"Columna A"},columnaDerecha:{bordeIzquierdo:310,ancho:240,texto:"Columna B"}},
+      esperado:"Columna A\n\n---\n\nColumna B",categoria:"columnas_asimetricas"},
+    {id:"ASM-004",descripcion:"Derecha con mayor densidad NO va primero",
+      layout:{columnaIzquierda:{bordeIzquierdo:50,ancho:180,texto:"Texto breve"},columnaDerecha:{bordeIzquierdo:260,ancho:320,texto:"Texto extenso con mucho más contenido que la columna izquierda independientemente de cuánto texto tenga"}},
+      esperado:"Texto breve\n\n---\n\nTexto extenso con mucho más contenido que la columna izquierda independientemente de cuánto texto tenga",categoria:"columnas_asimetricas"},
+    {id:"ASM-005",descripcion:"Derecha con fuente más grande NO va primero",
+      layout:{columnaIzquierda:{bordeIzquierdo:50,ancho:200,fontSize:10,texto:"Contenido normal"},columnaDerecha:{bordeIzquierdo:270,ancho:300,fontSize:18,texto:"ENCABEZADO GRANDE"}},
+      esperado:"Contenido normal\n\n---\n\nENCABEZADO GRANDE",categoria:"columnas_asimetricas"}
+  ];
+
+  function ejecutarPruebas(){
+    const resultados=CASOS_DE_PRUEBA.map(caso=>{
+      // Casos de columnas (layout) → extraerEnOrdenCorrecto; resto → pipeline OCR
+      const obtenido=caso.layout
+        ? extraerEnOrdenCorrecto(caso.layout)
+        : correccionesLayout(corregirOCR(caso.entrada));
+      const esperado=caso.esperado;
+      const entrada=caso.entrada!==undefined?caso.entrada:JSON.stringify(caso.layout);
+      const paso=obtenido===esperado;
+      return {id:caso.id,descripcion:caso.descripcion,categoria:caso.categoria,
+        entrada,esperado,obtenido,
+        resultado:paso?"✅ PASS":"❌ FAIL"};
+    });
+    const total=resultados.length;
+    const pasaron=resultados.filter(r=>r.resultado.includes("PASS")).length;
+    const fallaron=total-pasaron;
+    console.table(resultados);
+    console.log(`\nRESULTADO: ${pasaron}/${total} pruebas pasaron.`);
+    if(fallaron>0) console.warn(`${fallaron} pruebas fallaron. Revisar correcciones.`);
+    return {total,pasaron,fallaron,detalle:resultados};
+  }
+
+  function mostrarPruebas(){
+    const res=ejecutarPruebas();
+    const filas=res.detalle.map(r=>
+      `<tr><td>${r.id}</td><td>${escapar(r.descripcion)}</td>`+
+      `<td><code>${escapar(r.entrada)}</code></td>`+
+      `<td><code>${escapar(r.esperado)}</code></td>`+
+      `<td><code>${escapar(r.obtenido)}</code></td>`+
+      `<td class="r ${r.resultado.includes('PASS')?'pass':'fail'}">${r.resultado}</td></tr>`).join("");
+    const html=`<p class="test-resumen">${res.pasaron}/${res.total} PASS `+
+      (res.fallaron?`· <span class="fail">${res.fallaron} FAIL</span>`:`· <span class="pass">todo en verde</span>`)+`</p>`+
+      `<table class="tabla-test"><thead><tr><th>ID</th><th>Descripción</th><th>Entrada</th><th>Esperado</th><th>Obtenido</th><th>Resultado</th></tr></thead>`+
+      `<tbody>${filas}</tbody></table>`;
+    abrirModal("🧪 Pruebas de calibración OCR",html);
+  }
+
+  // ---------- Simulación de cotejo (OCR vs referencia) ----------
+  function clasificarDiferencia(a,b){
+    if(!b) return "faltante";
+    const sa=a.replace(/\s/g,""), sb=b.replace(/\s/g,"");
+    if(sa.length!==sb.length) return "truncamiento";
+    let dig=0,sep=0,dl=0;
+    for(let i=0;i<sa.length;i++){
+      if(sa[i]===sb[i])continue;
+      const ca=sa[i],cb=sb[i];
+      if(/[.,]/.test(ca)||/[.,]/.test(cb))sep++;
+      else if((/\d/.test(ca))!==(/\d/.test(cb)))dl++;     // dígito vs letra
+      else dig++;
+    }
+    if(sep>0 && sep>=dig && sep>=dl) return "separador";
+    if(dl>0) return "digito_letra";
+    if(dig>0) return "caracter_similar";
+    return "otro";
+  }
+  function simularCotejo(textoOCR,textoReferencia){
+    const lo=textoOCR.split("\n"), lr=textoReferencia.split("\n"), diferencias=[];
+    lo.forEach((l,i)=>{const r=lr[i]||""; if(l!==r) diferencias.push({linea:i+1,ocr:l,referencia:r,tipo:clasificarDiferencia(l,r)});});
+    return {
+      totalLineas:Math.max(lo.length,lr.length),
+      lineasIdenticas:lo.length-diferencias.length,
+      diferencias,
+      porcentajeFidelidad:((lo.length-diferencias.length)/lo.length*100).toFixed(2)+"%"
+    };
+  }
+  // Disponibles también desde la consola del navegador
+  window.ejecutarPruebas=ejecutarPruebas;
+  window.simularCotejo=simularCotejo;
+  window.correccionesLayout=correccionesLayout;
+  window.reconstruirColumnas=reconstruirColumnas;
+  window.extraerEnOrdenCorrecto=extraerEnOrdenCorrecto;
+  window.clasificarAsimetria=clasificarAsimetria;
+  console.log("Conversor v1.1.2 · Pruebas: ejecutarPruebas() — Cotejo: simularCotejo(ocr, referencia)");
+
+  // ---------- Botones ----------
+  document.getElementById("copiar").addEventListener("click",async()=>{
+    texto.focus(); texto.select(); texto.setSelectionRange(0,texto.value.length);
+    let ok=false;
+    if(navigator.clipboard&&window.isSecureContext){
+      try{await navigator.clipboard.writeText(texto.value); ok=true;}catch(e){}
+    }
+    if(!ok){try{ok=document.execCommand("copy");}catch(e){}}
+    toast(ok?"✅ Copiado al portapapeles"
+            :"⚠️ Texto seleccionado · presiona Ctrl + C", {error:!ok});
+  });
+  document.getElementById("descargar").addEventListener("click",()=>{
+    const blob=new Blob([texto.value],{type:"text/markdown"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob); a.download="documentos-convertidos.md"; a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  document.getElementById("limpiar").addEventListener("click",()=>{
+    resultados=[]; stats={archivos:0,paginas:0,ocr:0}; ultimoDiagnostico=null;
+    tabla.innerHTML='<tr class="filaVacia"><td colspan="3" class="vacio">Aún no has cargado archivos.</td></tr>';
+    texto.value=""; salida.style.display="none";
+    document.getElementById("diag").style.display="none";
+    pintarStats();
+  });
+
+  function ayuda(){
+    const html=`<p style="line-height:1.7;font-size:14px;margin:0 0 12px">
+      <b>1.</b> Arrastra tus archivos a la zona de carga.<br>
+      <b>2.</b> Espera el mensaje "Convertido" (los escaneados tardan más por el OCR).<br>
+      <b>3.</b> Pulsa "Copiar todo" y pégalo en Claude, o "Descargar .md".<br><br>
+      Formatos: PDF (incluso escaneados), Word, Excel, CSV, texto e imágenes.<br>
+      El OCR es multi-idioma (selector arriba), corrige confusiones típicas y evalúa
+      la calidad en el panel de <b>Diagnóstico</b>.</p>
+      <button class="btn primary btn-test" onclick="mostrarPruebas()">🧪 Ejecutar pruebas de calibración</button>`;
+    abrirModal("Ayuda · Conversor a Markdown",html);
+  }
+  window.ayuda=ayuda; window.mostrarPruebas=mostrarPruebas;
+</script>
+</body>
+</html>

@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FincaDocs — Conversor a Markdown</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- Librerías de conversión (se cargan desde internet la primera vez) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/turndown/7.1.2/turndown.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<style>
+  :root{
+    --bg:#eceef0; --panel:#ffffff; --ink:#16181c; --muted:#8b9099;
+    --line:#edeef0; --soft:#f5f6f8; --dark:#22271f; --green:#16a34a;
+    --radius:20px; --shadow:0 1px 3px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.04);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:'Inter',-apple-system,'Segoe UI',sans-serif;
+    background:var(--bg); color:var(--ink); font-size:14px;
+  }
+  .app{display:flex; min-height:100vh}
+
+  /* ---------- Barra lateral ---------- */
+  .sidebar{
+    width:248px; background:var(--panel); padding:26px 18px;
+    display:flex; flex-direction:column; gap:8px; border-right:1px solid var(--line);
+  }
+  .logo{font-weight:800; font-size:22px; letter-spacing:-.5px; padding:0 8px 22px}
+  .logo span{color:var(--green)}
+  .nav a{
+    display:flex; align-items:center; gap:12px; padding:11px 12px; border-radius:12px;
+    color:#5b6068; text-decoration:none; font-weight:500; cursor:pointer;
+  }
+  .nav a.activo{background:var(--soft); color:var(--ink); font-weight:600}
+  .nav a:hover{background:var(--soft)}
+  .nav svg{width:19px; height:19px; stroke-width:1.7}
+  .tip{
+    margin-top:auto; background:var(--dark); color:#fff; border-radius:16px; padding:18px;
+  }
+  .tip h4{margin:0 0 6px; font-size:14px}
+  .tip p{margin:0; font-size:12px; color:#c7ccc3; line-height:1.5}
+
+  /* ---------- Área principal ---------- */
+  .main{flex:1; padding:26px 32px; min-width:0}
+  .topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:24px}
+  .topbar h1{margin:0; font-size:26px; font-weight:700; letter-spacing:-.5px}
+  .estado-app{
+    display:flex; align-items:center; gap:8px; background:var(--panel);
+    padding:9px 16px; border-radius:999px; box-shadow:var(--shadow); font-size:13px; font-weight:500;
+  }
+  .dot{width:9px; height:9px; border-radius:50%; background:var(--green)}
+
+  /* ---------- Tarjetas de estadísticas ---------- */
+  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:18px}
+  .stat{background:var(--panel); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow)}
+  .stat.dark{background:var(--dark); color:#fff}
+  .stat .lbl{font-size:13px; color:var(--muted); font-weight:500}
+  .stat.dark .lbl{color:#aeb4ab}
+  .stat .num{font-size:30px; font-weight:700; margin-top:8px; letter-spacing:-1px}
+
+  /* ---------- Tarjetas generales ---------- */
+  .card{background:var(--panel); border-radius:var(--radius); box-shadow:var(--shadow); padding:22px; margin-bottom:18px}
+  .card-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px}
+  .card-head h3{margin:0; font-size:17px; font-weight:600}
+  .pills{display:flex; gap:6px; background:var(--soft); padding:4px; border-radius:999px}
+  .pills button{
+    border:0; background:transparent; padding:7px 16px; border-radius:999px;
+    font:inherit; font-size:13px; font-weight:500; color:#6b7079; cursor:pointer;
+  }
+  .pills button.on{background:var(--dark); color:#fff}
+
+  /* ---------- Zona de carga ---------- */
+  #zona{
+    border:2px dashed #d3d6da; border-radius:16px; background:var(--soft);
+    padding:46px 20px; text-align:center; cursor:pointer; transition:.18s;
+  }
+  #zona.activo{border-color:var(--green); background:#f0faf2}
+  #zona .ic{font-size:40px}
+  #zona p{margin:12px 0 4px; font-size:16px; font-weight:600}
+  #zona small{color:var(--muted)}
+
+  /* ---------- Tabla de archivos ---------- */
+  table{width:100%; border-collapse:collapse}
+  th{text-align:left; font-size:12px; color:var(--muted); font-weight:600; padding:10px 8px; border-bottom:1px solid var(--line)}
+  td{padding:14px 8px; border-bottom:1px solid var(--line); font-size:14px; vertical-align:middle}
+  tr:last-child td{border-bottom:0}
+  .badge{display:inline-block; padding:4px 11px; border-radius:999px; font-size:12px; font-weight:600; background:var(--soft); color:#555}
+  .badge.pdf{background:#fdecec; color:#c0392b}
+  .badge.word{background:#e9f0fb; color:#2563eb}
+  .badge.excel{background:#e8f6ec; color:#15803d}
+  .badge.img{background:#f3ecfb; color:#7c3aed}
+  .est{font-size:13px; color:var(--muted)}
+  .est.ok{color:var(--green); font-weight:600}
+  .est.err{color:#c0392b; font-weight:600}
+  .vacio{text-align:center; color:var(--muted); padding:24px}
+
+  /* ---------- Salida ---------- */
+  textarea{
+    width:100%; height:300px; border:1px solid var(--line); border-radius:14px;
+    padding:14px; font-family:'Consolas',monospace; font-size:13px; resize:vertical; background:var(--soft);
+  }
+  .acciones{display:flex; gap:10px; margin-top:14px; flex-wrap:wrap}
+  .btn{border:0; padding:11px 20px; border-radius:12px; font:inherit; font-weight:600; font-size:14px; cursor:pointer}
+  .btn.primary{background:var(--dark); color:#fff}
+  .btn.ghost{background:var(--soft); color:#444}
+  .btn:hover{opacity:.9}
+  .nota{font-size:12px; color:var(--muted); margin-top:10px; line-height:1.6}
+  @media(max-width:880px){
+    .sidebar{display:none}
+    .stats{grid-template-columns:repeat(2,1fr)}
+  }
+
+  /* ---------- Toast (aviso breve que aparece abajo y se desvanece solo) ---------- */
+  .toast{
+    position:fixed; left:50%; bottom:28px; transform:translateX(-50%) translateY(16px);
+    background:var(--dark); color:#fff; font-size:14px; font-weight:600;
+    padding:12px 20px; border-radius:999px; box-shadow:0 8px 28px rgba(0,0,0,.22);
+    z-index:90; opacity:0; pointer-events:none; transition:opacity .25s ease, transform .25s ease;
+    max-width:90vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  .toast.err{background:#c0392b}
+</style>
+</head>
+<body>
+<!-- TOAST (aviso breve) -->
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="app">
+
+  <!-- BARRA LATERAL -->
+  <aside class="sidebar">
+    <div class="logo">Finca<span>Docs</span></div>
+    <nav class="nav">
+      <a class="activo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg> Convertir</a>
+      <a onclick="document.getElementById('salida').scrollIntoView({behavior:'smooth'})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 6h16M4 12h16M4 18h10"/></svg> Resultado</a>
+      <a onclick="ayuda()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3 2.4c-.6.2-1 .8-1 1.6M12 17h.01"/></svg> Ayuda</a>
+    </nav>
+    <div class="tip">
+      <h4>💡 Consejo</h4>
+      <p>Los PDF escaneados y las imágenes se leen con OCR en español. Revisa siempre el texto antes de usarlo.</p>
+    </div>
+  </aside>
+
+  <!-- PRINCIPAL -->
+  <main class="main">
+    <div class="topbar">
+      <h1>Conversor a Markdown</h1>
+      <div class="estado-app"><span class="dot"></span><span id="estadoApp">Listo</span></div>
+    </div>
+
+    <!-- ESTADÍSTICAS -->
+    <div class="stats">
+      <div class="stat dark"><div class="lbl">Archivos convertidos</div><div class="num" id="stArchivos">0</div></div>
+      <div class="stat"><div class="lbl">Páginas procesadas</div><div class="num" id="stPaginas">0</div></div>
+      <div class="stat"><div class="lbl">Leídas con OCR</div><div class="num" id="stOcr">0</div></div>
+      <div class="stat"><div class="lbl">Texto generado</div><div class="num" id="stTam">0 KB</div></div>
+    </div>
+
+    <!-- ZONA DE CARGA -->
+    <div class="card">
+      <div class="card-head">
+        <h3>Cargar archivos</h3>
+      </div>
+      <div id="zona">
+        <div class="ic">⬇️</div>
+        <p>Arrastra aquí tus archivos</p>
+        <small>o haz clic para seleccionarlos · PDF, Word, Excel, CSV, texto e imágenes</small>
+        <input type="file" id="input" multiple style="display:none"
+               accept=".pdf,.docx,.xlsx,.xls,.csv,.txt,.md,.png,.jpg,.jpeg">
+      </div>
+    </div>
+
+    <!-- LISTA DE ARCHIVOS -->
+    <div class="card">
+      <div class="card-head">
+        <h3>Archivos</h3>
+        <div class="pills" id="filtros">
+          <button class="on" data-f="all">Todos</button>
+          <button data-f="pdf">PDF</button>
+          <button data-f="office">Office</button>
+          <button data-f="img">Imágenes</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Archivo</th><th>Tipo</th><th>Estado</th></tr></thead>
+        <tbody id="tabla">
+          <tr class="filaVacia"><td colspan="3" class="vacio">Aún no has cargado archivos.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- SALIDA -->
+    <div class="card" id="salida" style="display:none">
+      <div class="card-head"><h3>✅ Resultado en Markdown</h3></div>
+      <textarea id="texto" readonly></textarea>
+      <div class="acciones">
+        <button class="btn primary" id="copiar">📋 Copiar todo</button>
+        <button class="btn ghost" id="descargar">💾 Descargar .md</button>
+        <button class="btn ghost" id="limpiar">🗑️ Limpiar</button>
+      </div>
+      <p class="nota">Copia el texto y pégalo en Claude, o descarga el archivo .md y déjalo en la carpeta de tu proyecto.</p>
+    </div>
+  </main>
+</div>
+
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+  const input=document.getElementById("input");
+  const zona=document.getElementById("zona");
+  const tabla=document.getElementById("tabla");
+  const salida=document.getElementById("salida");
+  const texto=document.getElementById("texto");
+  const estadoApp=document.getElementById("estadoApp");
+
+  // ---------- Toast (aviso breve que aparece abajo y se desvanece solo) ----------
+  const _toast=document.getElementById("toast");
+  function toast(msg,{error=false,ms=2200}={}){
+    _toast.textContent=msg;
+    _toast.classList.toggle("err",error);
+    _toast.classList.add("show");
+    clearTimeout(_toast._t);
+    _toast._t=setTimeout(()=>_toast.classList.remove("show"),ms);
+  }
+
+  let resultados=[];                       // { nombre, markdown }
+  let stats={archivos:0,paginas:0,ocr:0};
+
+  // ---------- Carga ----------
+  zona.addEventListener("click",()=>input.click());
+  zona.addEventListener("dragover",e=>{e.preventDefault();zona.classList.add("activo")});
+  zona.addEventListener("dragleave",()=>zona.classList.remove("activo"));
+  zona.addEventListener("drop",e=>{e.preventDefault();zona.classList.remove("activo");manejar(e.dataTransfer.files)});
+  input.addEventListener("change",()=>manejar(input.files));
+
+  async function manejar(archivos){
+    document.querySelector(".filaVacia")?.remove();
+    for(const archivo of archivos){
+      const fila=crearFila(archivo);
+      try{
+        estadoApp.textContent="Procesando…";
+        const r=await convertir(archivo,fila);
+        resultados.push({nombre:archivo.name,markdown:r.md});
+        stats.archivos++; stats.paginas+=r.paginas; stats.ocr+=r.ocr;
+        marcar(fila,"✔ Convertido","ok");
+      }catch(err){
+        console.error(err);
+        marcar(fila,"✖ "+err.message,"err");
+      }
+      pintarSalida(); pintarStats();
+    }
+    estadoApp.textContent="Listo";
+  }
+
+  // ---------- Tabla ----------
+  function tipoDe(ext){
+    if(ext==="pdf")return{cls:"pdf",txt:"PDF",grupo:"pdf"};
+    if(ext==="docx")return{cls:"word",txt:"Word",grupo:"office"};
+    if(ext==="xlsx"||ext==="xls")return{cls:"excel",txt:"Excel",grupo:"office"};
+    if(ext==="csv")return{cls:"excel",txt:"CSV",grupo:"office"};
+    if(["png","jpg","jpeg"].includes(ext))return{cls:"img",txt:"Imagen",grupo:"img"};
+    return{cls:"",txt:"Texto",grupo:"office"};
+  }
+  function crearFila(archivo){
+    const ext=archivo.name.split(".").pop().toLowerCase();
+    const t=tipoDe(ext);
+    const tr=document.createElement("tr");
+    tr.dataset.grupo=t.grupo;
+    tr.innerHTML=`<td>${archivo.name}</td>
+      <td><span class="badge ${t.cls}">${t.txt}</span></td>
+      <td><span class="est">⏳ Procesando…</span></td>`;
+    tabla.appendChild(tr);
+    aplicarFiltro();
+    return tr;
+  }
+  function marcar(tr,txt,cls){const e=tr.querySelector(".est");e.textContent=txt;e.className="est "+cls}
+  function paso(tr,txt){tr.querySelector(".est").textContent=txt}
+
+  // ---------- Filtros ----------
+  let filtroActivo="all";
+  document.getElementById("filtros").addEventListener("click",e=>{
+    if(e.target.tagName!=="BUTTON")return;
+    document.querySelectorAll("#filtros button").forEach(b=>b.classList.remove("on"));
+    e.target.classList.add("on"); filtroActivo=e.target.dataset.f; aplicarFiltro();
+  });
+  function aplicarFiltro(){
+    document.querySelectorAll("#tabla tr").forEach(tr=>{
+      if(tr.classList.contains("filaVacia"))return;
+      tr.style.display=(filtroActivo==="all"||tr.dataset.grupo===filtroActivo)?"":"none";
+    });
+  }
+
+  // ---------- Conversión ----------
+  async function convertir(archivo,fila){
+    const ext=archivo.name.split(".").pop().toLowerCase();
+    if(ext==="pdf")return await pdf(archivo,fila);
+    if(ext==="docx")return {md:await word(archivo),paginas:1,ocr:0};
+    if(ext==="xlsx"||ext==="xls")return await excel(archivo);
+    if(ext==="csv")return {md:tabla2md((await archivo.text()).trim().split(/\r?\n/).map(l=>l.split(","))),paginas:1,ocr:0};
+    if(ext==="txt"||ext==="md")return {md:await archivo.text(),paginas:1,ocr:0};
+    if(["png","jpg","jpeg"].includes(ext))return {md:await imagen(archivo,fila),paginas:1,ocr:1};
+    throw new Error("Formato no soportado (."+ext+")");
+  }
+
+  // PDF con OCR automático y en paralelo
+  async function pdf(archivo,fila){
+    const buffer=await archivo.arrayBuffer();
+    const doc=await pdfjsLib.getDocument({data:buffer}).promise;
+    const total=doc.numPages;
+    const salidas=new Array(total+1).fill("");
+    const escaneadas=[]; let ocrCount=0, hechas=0;
+
+    // 1) Texto digital directo (rápido)
+    for(let i=1;i<=total;i++){
+      const pag=await doc.getPage(i);
+      const cont=await pag.getTextContent();
+      const t=cont.items.map(it=>it.str).join(" ").trim();
+      if(t.length<10){escaneadas.push(i);} else {salidas[i]=t; hechas++;}
+    }
+    paso(fila,`📄 ${hechas}/${total} con texto`);
+
+    // 2) Páginas escaneadas → OCR en paralelo
+    if(escaneadas.length){
+      ocrCount=escaneadas.length;
+      const tareas=escaneadas.map(i=>async()=>{
+        const pag=await doc.getPage(i);
+        const canvas=await render(pag); preprocesar(canvas);
+        salidas[i]=await reconocer(canvas);
+        hechas++; paso(fila,`🔍 OCR ${hechas}/${total} páginas…`);
+      });
+      await enParalelo(tareas);
+    }
+    let md="";
+    for(let i=1;i<=total;i++) md+=`\n\n## Página ${i}\n\n${salidas[i]}`;
+    return {md:md.trim(),paginas:total,ocr:ocrCount};
+  }
+
+  async function word(archivo){
+    const res=await mammoth.convertToHtml({arrayBuffer:await archivo.arrayBuffer()});
+    return new TurndownService({headingStyle:"atx"}).turndown(res.value);
+  }
+  async function excel(archivo){
+    const libro=XLSX.read(await archivo.arrayBuffer(),{type:"array"});
+    let md="";
+    libro.SheetNames.forEach(h=>{
+      const filas=XLSX.utils.sheet_to_json(libro.Sheets[h],{header:1,defval:""});
+      md+=`\n\n## Hoja: ${h}\n\n`+tabla2md(filas);
+    });
+    return {md:md.trim(),paginas:libro.SheetNames.length,ocr:0};
+  }
+  async function imagen(archivo,fila){
+    paso(fila,"🔍 Leyendo con OCR…");
+    return await reconocer(archivo);
+  }
+
+  function tabla2md(filas){
+    const l=filas.filter(f=>f.some(c=>String(c).trim()!==""));
+    if(!l.length)return "_(vacío)_";
+    const cols=Math.max(...l.map(f=>f.length));
+    const fila=f=>"| "+Array.from({length:cols},(_,i)=>String(f[i]??"").trim()).join(" | ")+" |";
+    let md=fila(l[0])+"\n| "+Array(cols).fill("---").join(" | ")+" |\n";
+    for(let i=1;i<l.length;i++)md+=fila(l[i])+"\n";
+    return md;
+  }
+
+  // ---------- Motor OCR (mejorado) ----------
+  // Render a mayor resolución para que el OCR lea mejor
+  async function render(pag){
+    const base=pag.getViewport({scale:1});
+    const escala=Math.min(3,2200/base.width);          // ~2200px de ancho
+    const vp=pag.getViewport({scale:escala});
+    const c=document.createElement("canvas");
+    c.width=vp.width; c.height=vp.height;
+    await pag.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
+    return c;
+  }
+  // Escala de grises + contraste → mejora la precisión
+  function preprocesar(c){
+    const ctx=c.getContext("2d");
+    const img=ctx.getImageData(0,0,c.width,c.height), d=img.data;
+    for(let i=0;i<d.length;i+=4){
+      let g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+      g=g<140?g*0.55:Math.min(255,g*1.2);             // resalta el texto negro
+      d[i]=d[i+1]=d[i+2]=g;
+    }
+    ctx.putImageData(img,0,0);
+  }
+
+  // Varios lectores en paralelo = más rápido
+  let pool=null;
+  async function obtenerPool(){
+    if(pool)return pool;
+    const n=Math.min(3,Math.max(1,(navigator.hardwareConcurrency||4)-2));
+    estadoApp.textContent="Preparando OCR…";
+    pool=[];
+    for(let i=0;i<n;i++){
+      const w=await Tesseract.createWorker("spa");
+      await w.setParameters({tessedit_pageseg_mode:"1",preserve_interword_spaces:"1"});
+      pool.push({w,libre:true});
+    }
+    return pool;
+  }
+  async function reconocer(imagen){
+    const p=await obtenerPool();
+    let slot;
+    while(!(slot=p.find(s=>s.libre))) await new Promise(r=>setTimeout(r,40));
+    slot.libre=false;
+    try{const {data:{text}}=await slot.w.recognize(imagen); return text.trim();}
+    finally{slot.libre=true;}
+  }
+  // Ejecuta tareas con límite de concurrencia = número de lectores
+  async function enParalelo(tareas){
+    const p=await obtenerPool(), limite=p.length, corriendo=[], todas=[];
+    for(const t of tareas){
+      const pr=Promise.resolve().then(t); todas.push(pr); corriendo.push(pr);
+      pr.finally(()=>corriendo.splice(corriendo.indexOf(pr),1));
+      if(corriendo.length>=limite) await Promise.race(corriendo);
+    }
+    await Promise.all(todas);
+  }
+
+  // ---------- Salida y estadísticas ----------
+  function pintarSalida(){
+    if(!resultados.length)return;
+    texto.value=resultados.map(r=>`# ${r.nombre}\n\n${r.markdown}`).join("\n\n---\n\n");
+    salida.style.display="block";
+  }
+  function pintarStats(){
+    document.getElementById("stArchivos").textContent=stats.archivos;
+    document.getElementById("stPaginas").textContent=stats.paginas;
+    document.getElementById("stOcr").textContent=stats.ocr;
+    const kb=Math.round((texto.value.length/1024)*10)/10;
+    document.getElementById("stTam").textContent=kb+" KB";
+  }
+
+  // ---------- Botones ----------
+  document.getElementById("copiar").addEventListener("click",async()=>{
+    texto.focus(); texto.select(); texto.setSelectionRange(0,texto.value.length);
+    let ok=false;
+    if(navigator.clipboard&&window.isSecureContext){
+      try{await navigator.clipboard.writeText(texto.value); ok=true;}catch(e){}
+    }
+    if(!ok){try{ok=document.execCommand("copy");}catch(e){}}
+    toast(ok?"✅ Copiado al portapapeles"
+            :"⚠️ Texto seleccionado · presiona Ctrl + C", {error:!ok});
+  });
+  document.getElementById("descargar").addEventListener("click",()=>{
+    const blob=new Blob([texto.value],{type:"text/markdown"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob); a.download="documentos-convertidos.md"; a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  document.getElementById("limpiar").addEventListener("click",()=>{
+    resultados=[]; stats={archivos:0,paginas:0,ocr:0};
+    tabla.innerHTML='<tr class="filaVacia"><td colspan="3" class="vacio">Aún no has cargado archivos.</td></tr>';
+    texto.value=""; salida.style.display="none"; pintarStats();
+  });
+
+  function ayuda(){
+    alert("CÓMO USAR FincaDocs\n\n"+
+      "1. Arrastra tus archivos a la zona de carga.\n"+
+      "2. Espera a que diga 'Convertido' (los escaneados tardan más por el OCR).\n"+
+      "3. Pulsa 'Copiar todo' y pégalo en Claude, o 'Descargar .md'.\n\n"+
+      "Formatos: PDF (incluso escaneados), Word, Excel, CSV, texto e imágenes.");
+  }
+</script>
+</body>
+</html>
