@@ -1,0 +1,12 @@
+{
+  "name": "markdown-consultoria",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Conversor de documentos a Markdown + arnes de validacion (pipeline identico al navegador)",
+  "scripts": {
+    "validar": "node test/validar.cjs"
+  },
+  "dependencies": {
+    "pdfjs-dist": "3.11.174"
+  }
+}
